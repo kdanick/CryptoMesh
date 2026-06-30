@@ -1,0 +1,347 @@
+const API = "http://localhost:5000/api";
+
+let me = null; // logged-in username
+let myPass = null; // password (kept in memory for key unlock)
+let activePeer = null; // selected chat partner
+let allMessages = []; // fetched messages for current user
+let inspectorOpen = true;
+let sentMessages = [];
+
+const colors = [
+  "#3b82f6",
+  "#22c55e",
+  "#a78bfa",
+  "#f59e0b",
+  "#ef4444",
+  "#06b6d4",
+  "#f97316",
+];
+function avatarColor(name) {
+  let h = 0;
+  for (let c of name) h = (h * 31 + c.charCodeAt(0)) % colors.length;
+  return colors[h];
+}
+function initials(name) {
+  return name.slice(0, 2).toUpperCase();
+}
+function timeStr() {
+  return new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// ── auth ──
+async function doLogin() {
+  const u = document.getElementById("login-user").value.trim();
+  const p = document.getElementById("login-pass").value;
+  if (!u || !p) return;
+  try {
+    const r = await fetch(`${API}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, password: p }),
+    });
+    const d = await r.json();
+    if (!r.ok) return alert(d.error || "Login failed");
+    me = u;
+    myPass = p;
+    document.getElementById("auth-login").style.display = "none";
+    document.getElementById("auth-logged").style.display = "flex";
+    document.getElementById("user-badge").textContent = "● " + me;
+    loadContacts();
+  } catch (e) {
+    alert("Cannot reach backend");
+  }
+}
+
+function doLogout() {
+  me = null;
+  myPass = null;
+  activePeer = null;
+  document.getElementById("auth-login").style.display = "flex";
+  document.getElementById("auth-logged").style.display = "none";
+  document.getElementById("user-list").innerHTML =
+    '<div style="color:var(--text3);font-size:0.78rem;padding:10px;text-align:center">Sign in to chat</div>';
+  document.getElementById("messages").innerHTML =
+    '<div class="empty-chat"><div class="icon">🔐</div><p>Select a contact to start a secure conversation</p></div>';
+  document.getElementById("chat-title").textContent = "Select a contact";
+  document.getElementById("compose-input").disabled = true;
+  document.getElementById("btn-send").disabled = true;
+}
+
+// ── register ──
+function openRegModal() {
+  document.getElementById("reg-modal").classList.add("show");
+}
+function closeRegModal() {
+  document.getElementById("reg-modal").classList.remove("show");
+}
+
+async function doRegister() {
+  const u = document.getElementById("reg-user").value.trim();
+  const p = document.getElementById("reg-pass").value;
+  const err = document.getElementById("reg-err");
+  const ok = document.getElementById("reg-ok");
+  err.classList.remove("show");
+  ok.classList.remove("show");
+  if (!u || !p) {
+    err.textContent = "Fill in all fields";
+    err.classList.add("show");
+    return;
+  }
+  try {
+    const r = await fetch(`${API}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, password: p }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      err.textContent = d.error;
+      err.classList.add("show");
+      return;
+    }
+    ok.textContent = `Account '${u}' created!`;
+    ok.classList.add("show");
+    if (me) loadContacts();
+    setTimeout(closeRegModal, 1500);
+  } catch (e) {
+    err.textContent = "Backend unreachable";
+    err.classList.add("show");
+  }
+}
+
+// ── contacts ──
+async function loadContacts() {
+  try {
+    const r = await fetch(`${API}/users`);
+    const d = await r.json();
+    const list = document.getElementById("user-list");
+    list.innerHTML = "";
+    d.users
+      .filter((u) => u !== me)
+      .forEach((u) => {
+        const item = document.createElement("div");
+        item.className = "user-item" + (u === activePeer ? " active" : "");
+        item.innerHTML = `
+        <div class="avatar" style="background:${avatarColor(u)}22;color:${avatarColor(u)}">${initials(u)}</div>
+        <div><div class="uname">${u}</div><div class="ustatus">🔒 end-to-end encrypted</div></div>`;
+        item.onclick = () => openChat(u);
+        list.appendChild(item);
+      });
+  } catch (e) {}
+}
+
+// ── open chat ──
+async function openChat(peer) {
+  activePeer = peer;
+  document.getElementById("chat-title").textContent = peer;
+  document.getElementById("compose-input").disabled = false;
+  document.getElementById("btn-send").disabled = false;
+  document.getElementById("compose-input").focus();
+  loadContacts(); // refresh active state
+  await fetchMessages();
+}
+
+// ── fetch & render messages ──
+async function fetchMessages() {
+  if (!me || !myPass) return;
+  try {
+    const r = await fetch(`${API}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: me, password: myPass }),
+    });
+    const d = await r.json();
+    if (!r.ok) return;
+    allMessages = d.messages || [];
+    renderMessages();
+  } catch (e) {}
+}
+
+function renderMessages() {
+  const box = document.getElementById("messages");
+  const convo = allMessages.filter(
+    (m) => m.sender === activePeer || m.recipient === activePeer,
+  );
+
+  // also include sent messages (we only get received ones from API, so we track locally)
+  const all = [
+    ...convo,
+    ...sentMessages.filter(
+      (m) => m.recipient === activePeer || m.sender === activePeer,
+    ),
+  ].sort((a, b) => (a._ts || 0) - (b._ts || 0));
+
+  if (all.length === 0) {
+    box.innerHTML =
+      '<div class="empty-chat"><div class="icon">💬</div><p>No messages yet — say something!</p></div>';
+    return;
+  }
+  box.innerHTML = "";
+  all.forEach((msg, i) => {
+    const sent = msg.sender === me;
+    const row = document.createElement("div");
+    row.className = "msg-row " + (sent ? "sent" : "received");
+    const color = avatarColor(msg.sender);
+    const sigBadge =
+      msg.sig_valid === true
+        ? `<span class="sig-ok">✓ signed</span>`
+        : msg.sig_valid === false
+          ? `<span class="sig-bad">✗ bad sig</span>`
+          : "";
+    row.innerHTML = `
+      <div class="bubble-avatar" style="background:${color}22;color:${color}">${initials(msg.sender)}</div>
+      <div class="bubble-wrap">
+        <div class="bubble" onclick="inspectMessage(${i},'${sent ? "sent" : "recv"}')" title="Click to inspect crypto">${msg.plaintext || "<em style=color:var(--text3)>encrypted</em>"}</div>
+        <div class="bubble-meta">
+          <span class="bubble-time">${msg._time || "--:--"}</span>
+          ${sigBadge}
+          <span class="crypto-hint">AES-256-GCM</span>
+        </div>
+      </div>`;
+    row.dataset.idx = i;
+    box.appendChild(row);
+  });
+  box.scrollTop = box.scrollHeight;
+  window._allRendered = all;
+}
+
+// ── send ──
+async function doSend() {
+  if (!me || !activePeer) return;
+  const ta = document.getElementById("compose-input");
+  const msg = ta.value.trim();
+  if (!msg) return;
+  ta.value = "";
+  ta.style.height = "auto";
+  try {
+    const r = await fetch(`${API}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: me,
+        password: myPass,
+        recipient: activePeer,
+        message: msg,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) return alert(d.error || "Send failed");
+    const sentMsg = {
+      sender: me,
+      recipient: activePeer,
+      plaintext: msg,
+      sig_valid: true,
+      steps: d.steps,
+      _time: timeStr(),
+      _ts: Date.now(),
+      _isSent: true,
+    };
+    sentMessages.push(sentMsg);
+    await fetchMessages();
+    // show inspector for the sent message
+    showInspector(d.steps, msg, "sent");
+  } catch (e) {
+    alert("Backend unreachable");
+  }
+}
+
+// ── inspector ──
+function toggleInspector() {
+  inspectorOpen = !inspectorOpen;
+  document
+    .getElementById("inspector")
+    .classList.toggle("hidden", !inspectorOpen);
+}
+
+function inspectMessage(idx, dir) {
+  const all = window._allRendered || [];
+  const msg = all[idx];
+  if (!msg) return;
+  if (!inspectorOpen) {
+    inspectorOpen = true;
+    document.getElementById("inspector").classList.remove("hidden");
+  }
+  showInspector(msg.steps, msg.plaintext, dir, msg);
+}
+
+const stepClasses = {
+  ECDH: "dh",
+  "Key Exchange": "dh",
+  X25519: "dh",
+  HKDF: "kdf",
+  "Key Deriv": "kdf",
+  AES: "enc",
+  Encrypt: "enc",
+  Decrypt: "enc",
+  GCM: "enc",
+  Ed25519: "sig",
+  Sign: "sig",
+  Signature: "sig",
+  Verify: "sig",
+  Authenticate: "auth",
+  bcrypt: "auth",
+  scrypt: "auth",
+  KEK: "auth",
+  password: "auth",
+  Password: "auth",
+  Saved: "save",
+  disk: "save",
+};
+function stepClass(name) {
+  for (const [k, v] of Object.entries(stepClasses))
+    if (name.includes(k)) return v;
+  return "";
+}
+
+function showInspector(steps, plaintext, dir, msg) {
+  const body = document.getElementById("inspector-body");
+  const dirLabel = dir === "sent" ? "↑ outgoing" : "↓ incoming";
+  const dirColor = dir === "sent" ? "var(--accent)" : "var(--green)";
+
+  let html = `
+    <div class="insp-section">
+      <div class="insp-label">Message</div>
+      <div class="algo-badge" style="border-color:${dirColor};color:var(--text)">${dirLabel} — "${plaintext || "(encrypted)"}"</div>
+    </div>
+    <div class="insp-section">
+      <div class="insp-label">Protocol</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+        <span class="tag tag-dh">X25519 ECDH</span>
+        <span class="tag tag-kdf">HKDF-SHA256</span>
+        <span class="tag tag-enc">AES-256-GCM</span>
+        <span class="tag tag-sig">Ed25519</span>
+      </div>
+    </div>
+    <div class="insp-section">
+      <div class="insp-label">Operations (${(steps || []).length} steps)</div>
+  `;
+
+  (steps || []).forEach((s, i) => {
+    const cls = stepClass(s.step);
+    html += `<div class="step-item ${cls}" style="animation-delay:${i * 60}ms">
+      <div class="step-name">${s.step}</div>
+      <div class="step-detail">${s.detail}</div>
+    </div>`;
+  });
+
+  if (!steps || steps.length === 0) {
+    html +=
+      '<div style="color:var(--text3);font-size:0.78rem">No step data available for this message.</div>';
+  }
+
+  html += "</div>";
+
+  if (msg && msg.sig_valid !== undefined) {
+    html += `<div class="insp-section">
+      <div class="insp-label">Integrity</div>
+      <div class="algo-badge" style="border-color:${msg.sig_valid ? "var(--green)" : "var(--red)"}">
+        Ed25519 signature: ${msg.sig_valid ? "✓ VALID — sender authenticated" : "✗ INVALID — possible forgery"}
+      </div>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+}

@@ -1,0 +1,9 @@
+{
+  "sender": "bob",
+  "recipient": "alice",
+  "eph_pub": "66OLSfT9Rt8NL7XfnGwMudFoKb4cpnbAtnSd3Z4IGCY=",
+  "ciphertext": "MsKGl4jXj7m+hVelMIPb+W+WpvST8fuJe/NDu1DhAt/9HQ==",
+  "nonce": "Lor0gc17nZSvtqaW",
+  "signature": "oyh1JDhCHWd4UgxDWvwdFN4upZpMCw37A/EGYkrSVveDcOrdl8ib7psNcdLXdPyhrNhVZgXAiVfFgz/zMNsCDA==",
+  "algorithm": "X25519-ECDH + HKDF-SHA256 + AES-256-GCM + Ed25519"
+}
