@@ -194,10 +194,6 @@ body {
   color: var(--text3);
 }
 
-.sidebar-footer {
-  padding: 10px;
-  border-top: 1px solid var(--border);
-}
 .new-user-btn {
   width: 100%;
   padding: 7px;
@@ -234,12 +230,6 @@ body {
 .chat-title {
   font-size: 0.9rem;
   font-weight: 600;
-}
-.chat-subtitle {
-  font-size: 0.7rem;
-  color: var(--text3);
-  margin-top: 2px;
-  font-family: var(--mono);
 }
 
 .btn-inspector {
