@@ -14,13 +14,7 @@
   <body>
     <div class="topbar">
       <div class="logo">Crypto<em>Mesh</em></div>
-      <div class="auth-area" id="auth-login">
-        <input type="text" id="login-user" placeholder="username" />
-        <input type="password" id="login-pass" placeholder="password" />
-        <button class="btn btn-blue" onclick="doLogin()">Sign in</button>
-        <button class="btn btn-ghost" onclick="openRegModal()">Register</button>
-      </div>
-      <div class="auth-area" id="auth-logged" style="display: none">
+      <div class="auth-area">
         <span
           class="user-badge"
           id="user-badge"
@@ -33,20 +27,12 @@
     <div class="shell">
       <div class="sidebar">
         <div class="sidebar-header"><h3>Contacts</h3></div>
-        <div class="user-list" id="user-list">
-          <div
-            style="
-              color: var(--text3);
-              font-size: 0.78rem;
-              padding: 10px;
-              text-align: center;
-            "
-          >
-            Sign in to chat
-          </div>
-        </div>
+        <div class="user-list" id="user-list"></div>
         <div class="sidebar-footer">
-          <button class="new-user-btn" onclick="openRegModal()">
+          <button
+            class="new-user-btn"
+            onclick="window.location.href = '/register'"
+          >
             + New account
           </button>
         </div>
@@ -56,7 +42,7 @@
         <div class="chat-header">
           <div>
             <div class="chat-title" id="chat-title">Select a contact</div>
-            <div class="chat-subtitle" id="chat-subtitle">
+            <div class="chat-subtitle">
               DH (RFC 3526) · STS · RSA-PSS · AES-256-GCM
             </div>
           </div>
@@ -106,30 +92,6 @@
           <div class="insp-placeholder">
             Click a message bubble to inspect its cryptographic operations
           </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-overlay" id="reg-modal">
-      <div class="modal">
-        <h3>Create account</h3>
-        <div class="alert alert-err" id="reg-err"></div>
-        <div class="alert alert-ok" id="reg-ok"></div>
-        <div class="field">
-          <label>Username</label
-          ><input type="text" id="reg-user" placeholder="alice" />
-        </div>
-        <div class="field">
-          <label>Password</label
-          ><input type="password" id="reg-pass" placeholder="••••••••" />
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-blue" onclick="doRegister()" style="flex: 1">
-            Register
-          </button>
-          <button class="btn btn-ghost" onclick="closeRegModal()">
-            Cancel
-          </button>
         </div>
       </div>
     </div>

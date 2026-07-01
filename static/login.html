@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CryptoMesh — Sign in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <style>
+      body {
+        justify-content: center;
+        align-items: center;
+        overflow: auto;
+      }
+      .auth-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 380px;
+      }
+      .auth-card-header {
+        text-align: center;
+        margin-bottom: 1.75rem;
+      }
+      .auth-card-header .logo {
+        font-size: 1.3rem;
+        display: block;
+        margin-bottom: 0.4rem;
+      }
+      .auth-card-header p {
+        font-size: 0.82rem;
+        color: var(--text3);
+      }
+      .field {
+        margin-bottom: 1rem;
+      }
+      .field label {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text3);
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+      .field input {
+        width: 100%;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 0.875rem;
+        padding: 9px 12px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .field input:focus {
+        border-color: var(--accent);
+      }
+      .btn-full {
+        width: 100%;
+        padding: 9px;
+        font-size: 0.875rem;
+        border-radius: 8px;
+        margin-top: 0.25rem;
+      }
+      .auth-footer {
+        text-align: center;
+        margin-top: 1.25rem;
+        font-size: 0.8rem;
+        color: var(--text3);
+      }
+      .auth-footer a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .auth-footer a:hover {
+        text-decoration: underline;
+      }
+      .alert {
+        padding: 8px 12px;
+        border-radius: 7px;
+        font-size: 0.8rem;
+        margin-bottom: 1rem;
+        display: none;
+      }
+      .alert.show {
+        display: block;
+      }
+      .alert-err {
+        background: rgba(239, 68, 68, 0.08);
+        border: 1px solid var(--red);
+        color: var(--red);
+      }
+      .crypto-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        justify-content: center;
+        margin-top: 1.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border);
+      }
+      .tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        padding: 2px 7px;
+        border-radius: 4px;
+      }
+      .tag-dh {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--green);
+      }
+      .tag-enc {
+        background: rgba(167, 139, 250, 0.1);
+        color: var(--purple);
+      }
+      .tag-sig {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber);
+      }
+      .tag-kdf {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <span class="logo">Crypto<em>Mesh</em></span>
+        <p>Sign in to your encrypted account</p>
+      </div>
+
+      <div class="alert alert-err" id="err"></div>
+
+      <div class="field">
+        <label>Username</label>
+        <input
+          type="text"
+          id="username"
+          placeholder="alice"
+          autocomplete="username"
+        />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input
+          type="password"
+          id="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          onkeydown="if (event.key === 'Enter') doLogin();"
+        />
+      </div>
+
+      <button class="btn btn-blue btn-full" onclick="doLogin()">Sign in</button>
+
+      <div class="auth-footer">
+        Don't have an account? <a href="/register">Register</a>
+      </div>
+
+      <div class="crypto-tags">
+        <span class="tag tag-dh">DH RFC 3526</span>
+        <span class="tag tag-sig">RSA-PSS</span>
+        <span class="tag tag-enc">AES-256-GCM</span>
+        <span class="tag tag-kdf">SHA-256</span>
+        <span class="tag tag-kdf">bcrypt</span>
+      </div>
+    </div>
+
+    <script>
+      async function doLogin() {
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        const err = document.getElementById("err");
+        err.classList.remove("show");
+
+        if (!username || !password) {
+          err.textContent = "Please fill in all fields.";
+          err.classList.add("show");
+          return;
+        }
+
+        try {
+          const r = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+          });
+          const d = await r.json();
+          if (!r.ok) {
+            err.textContent = d.error || "Login failed.";
+            err.classList.add("show");
+            return;
+          }
+          // Store credentials in sessionStorage for the chat page
+          sessionStorage.setItem("cm_user", username);
+          sessionStorage.setItem("cm_pass", password);
+          window.location.href = "/";
+        } catch (e) {
+          err.textContent = "Cannot reach server.";
+          err.classList.add("show");
+        }
+      }
+    </script>
+  </body>
+</html>

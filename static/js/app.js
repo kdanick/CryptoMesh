@@ -1,9 +1,9 @@
 const API = "http://localhost:5000/api";
 
-let me = null; // logged-in username
-let myPass = null; // password (kept in memory for key unlock)
-let activePeer = null; // selected chat partner
-let allMessages = []; // fetched messages for current user
+let me = null;
+let myPass = null;
+let activePeer = null;
+let allMessages = [];
 let inspectorOpen = true;
 let sentMessages = [];
 
@@ -31,86 +31,31 @@ function timeStr() {
   });
 }
 
-// ── auth ──
-async function doLogin() {
-  const u = document.getElementById("login-user").value.trim();
-  const p = document.getElementById("login-pass").value;
-  if (!u || !p) return;
-  try {
-    const r = await fetch(`${API}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: u, password: p }),
-    });
-    const d = await r.json();
-    if (!r.ok) return alert(d.error || "Login failed");
-    me = u;
-    myPass = p;
-    document.getElementById("auth-login").style.display = "none";
-    document.getElementById("auth-logged").style.display = "flex";
-    document.getElementById("user-badge").textContent = "● " + me;
-    loadContacts();
-  } catch (e) {
-    alert("Cannot reach backend");
+// ── session check: redirect to login if not authenticated ──
+(function () {
+  const u = sessionStorage.getItem("cm_user");
+  const p = sessionStorage.getItem("cm_pass");
+  if (!u || !p) {
+    window.location.href = "/login";
+    return;
   }
-}
+  me = u;
+  myPass = p;
+  document.getElementById("user-badge").textContent = "● " + me;
+  loadContacts();
+})();
 
 function doLogout() {
-  me = null;
-  myPass = null;
-  activePeer = null;
-  document.getElementById("auth-login").style.display = "flex";
-  document.getElementById("auth-logged").style.display = "none";
-  document.getElementById("user-list").innerHTML =
-    '<div style="color:var(--text3);font-size:0.78rem;padding:10px;text-align:center">Sign in to chat</div>';
-  document.getElementById("messages").innerHTML =
-    '<div class="empty-chat"><div class="icon">🔐</div><p>Select a contact to start a secure conversation</p></div>';
-  document.getElementById("chat-title").textContent = "Select a contact";
-  document.getElementById("compose-input").disabled = true;
-  document.getElementById("btn-send").disabled = true;
+  sessionStorage.removeItem("cm_user");
+  sessionStorage.removeItem("cm_pass");
+  window.location.href = "/login";
 }
 
 // ── register ──
 function openRegModal() {
-  document.getElementById("reg-modal").classList.add("show");
+  window.location.href = "/register";
 }
-function closeRegModal() {
-  document.getElementById("reg-modal").classList.remove("show");
-}
-
-async function doRegister() {
-  const u = document.getElementById("reg-user").value.trim();
-  const p = document.getElementById("reg-pass").value;
-  const err = document.getElementById("reg-err");
-  const ok = document.getElementById("reg-ok");
-  err.classList.remove("show");
-  ok.classList.remove("show");
-  if (!u || !p) {
-    err.textContent = "Fill in all fields";
-    err.classList.add("show");
-    return;
-  }
-  try {
-    const r = await fetch(`${API}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: u, password: p }),
-    });
-    const d = await r.json();
-    if (!r.ok) {
-      err.textContent = d.error;
-      err.classList.add("show");
-      return;
-    }
-    ok.textContent = `Account '${u}' created!`;
-    ok.classList.add("show");
-    if (me) loadContacts();
-    setTimeout(closeRegModal, 1500);
-  } catch (e) {
-    err.textContent = "Backend unreachable";
-    err.classList.add("show");
-  }
-}
+function closeRegModal() {}
 
 // ── contacts ──
 async function loadContacts() {

@@ -330,5 +330,13 @@ def get_messages():
 def index():
     return send_from_directory("static", "index.html")
 
+@app.route("/login")
+def login_page():
+    return send_from_directory("static", "login.html")
+
+@app.route("/register")
+def register_page():
+    return send_from_directory("static", "register.html")
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
