@@ -88,8 +88,12 @@ def get_messages(data):
 
         pkg = load_json(f)
 
-        if pkg.get("recipient") != username:
-            continue
+        if (
+            pkg.get("recipient") != username
+            and
+            pkg.get("sender") != username
+            ):
+                continue
 
         steps = []
         plaintext = None
@@ -99,6 +103,49 @@ def get_messages(data):
         try:
 
             sender = pkg["sender"]
+            # =========================
+            # Messages sent by this user
+            # =========================
+
+            if sender == username:
+
+                plaintext = pkg.get("sender_plaintext")
+
+                steps.append({
+                    "step": "① Load Message History",
+                    "detail": "Loaded sender's saved copy of the message."
+                })
+
+                steps.append({
+                    "step": "② Original Encryption",
+                    "detail": "This message was originally encrypted using DH + STS + AES-256-GCM."
+                })
+
+                sig_valid = True
+
+                results.append({
+
+                    "filename": f.name,
+                    
+                    "timestamp": pkg.get("timestamp", 0),
+
+                    "sender": sender,
+
+                    "recipient": pkg.get("recipient"),
+
+                    "algorithm": pkg.get("algorithm"),
+
+                    "plaintext": plaintext,
+
+                    "sig_valid": sig_valid,
+
+                    "error": None,
+
+                    "steps": steps
+
+                })
+
+                continue
 
             eph_pub_int = b64_to_int(
                 pkg["eph_pub"]

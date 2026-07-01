@@ -5,7 +5,6 @@ let myPass = null;
 let activePeer = null;
 let allMessages = [];
 let inspectorOpen = true;
-let sentMessages = [];
 
 // ===== Notification System =====
 let knownMessages = new Set();
@@ -257,19 +256,19 @@ function renderMessages() {
 
   );
 
-  const all = [
+const all = [
 
-    ...convo,
+  ...convo,
 
-    ...sentMessages.filter(
+  ...sentMessages.filter(
 
-      (m) =>
-        m.recipient === activePeer ||
-        m.sender === activePeer
+    (m) =>
+      m.recipient === activePeer ||
+      m.sender === activePeer
 
-    )
+  )
 
-  ].sort((a, b) => (a._ts || 0) - (b._ts || 0));
+].sort((a, b) => (a._ts || 0) - (b._ts || 0));
 
   if (all.length === 0) {
 
@@ -400,27 +399,29 @@ async function doSend() {
     });
 
     const d = await r.json();
+if (!r.ok)
+  return alert(d.error || "Send failed");
 
-    if (!r.ok)
-      return alert(d.error || "Send failed");
+const sentMsg = {
 
-    const sentMsg = {
+  sender: me,
+  recipient: activePeer,
+  plaintext: msg,
+  sig_valid: true,
+  steps: d.steps,
+  _time: timeStr(),
+  _ts: Date.now(),
+  _isSent: true
 
-      sender: me,
-      recipient: activePeer,
-      plaintext: msg,
-      sig_valid: true,
-      steps: d.steps,
-      _time: timeStr(),
-      _ts: Date.now(),
-      _isSent: true
+};
 
-    };
+sentMessages.push(sentMsg);
 
-    sentMessages.push(sentMsg);
+// Refresh messages from the backend
+await fetchMessages();
 
-    renderMessages();
-
+// Show Crypto Inspector
+showInspector(d.steps, msg, "sent");
     showInspector(d.steps, msg, "sent");
 
   }

@@ -9,6 +9,7 @@ Handles sending encrypted messages using:
 """
 
 import hashlib
+import time
 from cryptography.hazmat.primitives.asymmetric import dh, padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import hashes, serialization
@@ -160,33 +161,27 @@ def send_message(data):
 
     pkg = {
 
-        "sender": sender,
-        "recipient": recipient,
+    "sender": sender,
+    "recipient": recipient,
 
-        "eph_pub": int_to_b64(
-            eph_pub_int
-        ),
+    # Sender's local copy
+    "sender_plaintext": message,
 
-        "ciphertext": b64e(
-            ciphertext
-        ),
+    "eph_pub": int_to_b64(eph_pub_int),
 
-        "nonce": b64e(
-            nonce
-        ),
+    "ciphertext": b64e(ciphertext),
 
-        "sts_signature": b64e(
-            sts_signature
-        ),
+    "nonce": b64e(nonce),
 
-        "msg_signature": b64e(
-            msg_signature
-        ),
+    "sts_signature": b64e(sts_signature),
 
-        "algorithm":
-            "DH (2048-bit MODP) + STS + RSA-2048 + AES-256-GCM"
-    }
+    "msg_signature": b64e(msg_signature),
+    
+    "timestamp": time.time(),
 
+    "algorithm":
+        "DH (2048-bit MODP) + STS + RSA-2048 + AES-256-GCM"
+}
     idx = len(
         list(
             MSGS_DIR.glob("*.json")
