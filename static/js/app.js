@@ -6,6 +6,13 @@ let activePeer = null;
 let allMessages = [];
 let inspectorOpen = true;
 
+// ===== Notification System =====
+let knownMessages = new Set();
+let unreadCounts = {};
+let pollingStarted = false;
+
+// ===============================
+
 const colors = [
   "#3b82f6",
   "#22c55e",
@@ -15,14 +22,18 @@ const colors = [
   "#06b6d4",
   "#f97316",
 ];
+
 function avatarColor(name) {
   let h = 0;
-  for (let c of name) h = (h * 31 + c.charCodeAt(0)) % colors.length;
+  for (let c of name)
+    h = (h * 31 + c.charCodeAt(0)) % colors.length;
   return colors[h];
 }
+
 function initials(name) {
   return name.slice(0, 2).toUpperCase();
 }
+
 function timeStr() {
   return new Date().toLocaleTimeString([], {
     hour: "2-digit",
@@ -30,152 +41,505 @@ function timeStr() {
   });
 }
 
-// ── session check: redirect to login if not authenticated ──
+// ===============================
+// Session Check
+// ===============================
+
 (function () {
+
   const u = sessionStorage.getItem("cm_user");
   const p = sessionStorage.getItem("cm_pass");
+
   if (!u || !p) {
     window.location.href = "/login";
     return;
   }
+
   me = u;
   myPass = p;
+
   document.getElementById("user-badge").textContent = "● " + me;
+
   loadContacts();
+  fetchMessages();
+
+  if (!pollingStarted) {
+
+    pollingStarted = true;
+
+    setInterval(pollMessages, 2000);
+
+  }
+
 })();
 
+// ===============================
+// Logout
+// ===============================
+
 function doLogout() {
+
   sessionStorage.removeItem("cm_user");
   sessionStorage.removeItem("cm_pass");
+
   window.location.href = "/login";
+
 }
 
-// ── register ──
+// ===============================
+// Register
+// ===============================
+
 function openRegModal() {
   window.location.href = "/register";
 }
+
 function closeRegModal() {}
 
-// ── contacts ──
+// ===============================
+// Contacts
+// ===============================
+
 async function loadContacts() {
+
   try {
+
     const r = await fetch(`${API}/users`);
     const d = await r.json();
+
     const list = document.getElementById("user-list");
+
     list.innerHTML = "";
+
     d.users
       .filter((u) => u !== me)
       .forEach((u) => {
-        const item = document.createElement("div");
-        item.className = "user-item" + (u === activePeer ? " active" : "");
-        item.innerHTML = `
-        <div class="avatar" style="background:${avatarColor(u)}22;color:${avatarColor(u)}">${initials(u)}</div>
-        <div><div class="uname">${u}</div><div class="ustatus">🔒 end-to-end encrypted</div></div>`;
-        item.onclick = () => openChat(u);
-        list.appendChild(item);
-      });
-  } catch (e) {}
-}
 
-// ── open chat ──
+        const unread = unreadCounts[u] || 0;
+
+        const item = document.createElement("div");
+
+        item.className =
+          "user-item" +
+          (u === activePeer ? " active" : "");
+
+        item.innerHTML = `
+          <div class="avatar"
+          style="background:${avatarColor(u)}22;color:${avatarColor(u)}">
+
+            ${initials(u)}
+
+          </div>
+
+          <div style="flex:1">
+
+            <div class="uname">${u}</div>
+
+            <div class="ustatus">
+              🔒 end-to-end encrypted
+            </div>
+
+          </div>
+
+          ${
+            unread > 0
+              ? `<div class="unread-badge">${unread}</div>`
+              : ""
+          }
+        `;
+
+        item.onclick = () => openChat(u);
+
+        list.appendChild(item);
+
+      });
+
+  }
+  catch (e) {
+
+    console.log(e);
+
+  }
+
+}
+// ===============================
+// Open Chat
+// ===============================
+
 async function openChat(peer) {
+
   activePeer = peer;
+
+  // Clear unread count for this contact
+  unreadCounts[peer] = 0;
+
   document.getElementById("chat-title").textContent = peer;
+
   document.getElementById("compose-input").disabled = false;
   document.getElementById("btn-send").disabled = false;
+
   document.getElementById("compose-input").focus();
-  loadContacts(); // refresh active state
+
+  loadContacts();
+
   await fetchMessages();
+
 }
 
-// ── fetch & render messages ──
+// ===============================
+// Fetch Messages
+// ===============================
+
 async function fetchMessages() {
+
   if (!me || !myPass) return;
+
   try {
+
     const r = await fetch(`${API}/messages`, {
+
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: me, password: myPass }),
+
+      headers: {
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+
+        username: me,
+
+        password: myPass
+
+      })
+
     });
+
     const d = await r.json();
+
     if (!r.ok) return;
+
     allMessages = d.messages || [];
+
+    // Register messages so they aren't treated as "new"
+    knownMessages.clear();
+
+    allMessages.forEach(msg => {
+
+      knownMessages.add(msg.filename);
+
+    });
+
     renderMessages();
-  } catch (e) {}
+
+  }
+  catch (e) {
+
+    console.log(e);
+
+  }
+
 }
+
+// ===============================
+// Render Messages
+// ===============================
 
 function renderMessages() {
+
   const box = document.getElementById("messages");
+
   const convo = allMessages.filter(
-    (m) => m.sender === activePeer || m.recipient === activePeer,
+
+    (m) =>
+      m.sender === activePeer ||
+      m.recipient === activePeer
+
   );
 
-const all = convo.sort((a, b) => a.timestamp - b.timestamp);
+const all = [
+
+  ...convo,
+
+  ...sentMessages.filter(
+
+    (m) =>
+      m.recipient === activePeer ||
+      m.sender === activePeer
+
+  )
+
+].sort((a, b) => (a._ts || 0) - (b._ts || 0));
 
   if (all.length === 0) {
-    box.innerHTML =
-      '<div class="empty-chat"><div class="icon">💬</div><p>No messages yet — say something!</p></div>';
+
+    box.innerHTML = `
+      <div class="empty-chat">
+        <div class="icon">💬</div>
+        <p>No messages yet — say something!</p>
+      </div>
+    `;
+
     return;
+
   }
+
   box.innerHTML = "";
+
   all.forEach((msg, i) => {
+
     const sent = msg.sender === me;
+
     const row = document.createElement("div");
-    row.className = "msg-row " + (sent ? "sent" : "received");
+
+    row.className =
+      "msg-row " +
+      (sent ? "sent" : "received");
+
     const color = avatarColor(msg.sender);
+
     const sigBadge =
+
       msg.sig_valid === true
+
         ? `<span class="sig-ok">✓ signed</span>`
+
         : msg.sig_valid === false
-          ? `<span class="sig-bad">✗ bad sig</span>`
-          : "";
+
+        ? `<span class="sig-bad">✗ bad sig</span>`
+
+        : "";
+
     row.innerHTML = `
-      <div class="bubble-avatar" style="background:${color}22;color:${color}">${initials(msg.sender)}</div>
+
+      <div class="bubble-avatar"
+      style="background:${color}22;color:${color}">
+
+        ${initials(msg.sender)}
+
+      </div>
+
       <div class="bubble-wrap">
-        <div class="bubble" onclick="inspectMessage(${i},'${sent ? "sent" : "recv"}')" title="Click to inspect crypto">${msg.plaintext || "<em style=color:var(--text3)>encrypted</em>"}</div>
-        <div class="bubble-meta">
-          <span class="bubble-time">${msg._time || "--:--"}</span>
-          ${sigBadge}
-          <span class="crypto-hint">AES-256-GCM</span>
+
+        <div class="bubble"
+             onclick="inspectMessage(${i},'${sent ? "sent" : "recv"}')">
+
+          ${msg.plaintext || "<em style='color:var(--text3)'>encrypted</em>"}
+
         </div>
-      </div>`;
+
+        <div class="bubble-meta">
+
+          <span class="bubble-time">
+
+            ${msg._time || "--:--"}
+
+          </span>
+
+          ${sigBadge}
+
+          <span class="crypto-hint">
+
+            AES-256-GCM
+
+          </span>
+
+        </div>
+
+      </div>
+
+    `;
+
     row.dataset.idx = i;
+
     box.appendChild(row);
+
   });
+
   box.scrollTop = box.scrollHeight;
+
   window._allRendered = all;
+
 }
 
-// ── send ──
+// ===============================
+// Send Message
+// ===============================
+
 async function doSend() {
+
   if (!me || !activePeer) return;
+
   const ta = document.getElementById("compose-input");
   const msg = ta.value.trim();
+
   if (!msg) return;
+
   ta.value = "";
   ta.style.height = "auto";
+
   try {
+
     const r = await fetch(`${API}/send`, {
+
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+
+      headers: {
+        "Content-Type": "application/json"
+      },
+
       body: JSON.stringify({
+
         sender: me,
         password: myPass,
         recipient: activePeer,
-        message: msg,
-      }),
+        message: msg
+
+      })
+
     });
+
     const d = await r.json();
-    if (!r.ok) return alert(d.error || "Send failed");
-    
-    await fetchMessages();
-    // show inspector for the sent message
+if (!r.ok)
+  return alert(d.error || "Send failed");
+
+const sentMsg = {
+
+  sender: me,
+  recipient: activePeer,
+  plaintext: msg,
+  sig_valid: true,
+  steps: d.steps,
+  _time: timeStr(),
+  _ts: Date.now(),
+  _isSent: true
+
+};
+
+sentMessages.push(sentMsg);
+
+// Refresh messages from the backend
+await fetchMessages();
+
+// Show Crypto Inspector
+showInspector(d.steps, msg, "sent");
     showInspector(d.steps, msg, "sent");
-  } catch (e) {
-    alert("Backend unreachable");
+
   }
+
+  catch (e) {
+
+    alert("Backend unreachable");
+
+  }
+
 }
 
+
+// ===============================
+// Poll Server Every 2 Seconds
+// ===============================
+
+async function pollMessages() {
+
+  if (!me || !myPass)
+    return;
+
+  try {
+
+    const r = await fetch(`${API}/messages`, {
+
+      method: "POST",
+
+      headers: {
+
+        "Content-Type": "application/json"
+
+      },
+
+      body: JSON.stringify({
+
+        username: me,
+
+        password: myPass
+
+      })
+
+    });
+
+    const d = await r.json();
+
+    if (!r.ok)
+      return;
+
+    let changed = false;
+
+    (d.messages || []).forEach(msg => {
+
+      if (!knownMessages.has(msg.filename)) {
+
+        knownMessages.add(msg.filename);
+
+        changed = true;
+
+        if (msg.sender !== activePeer) {
+
+          unreadCounts[msg.sender] =
+            (unreadCounts[msg.sender] || 0) + 1;
+
+          showBrowserNotification(msg.sender);
+
+        }
+
+      }
+
+    });
+
+    if (changed) {
+
+      allMessages = d.messages;
+
+      renderMessages();
+
+      loadContacts();
+
+    }
+
+  }
+
+  catch (e) {
+
+    console.log(e);
+
+  }
+
+}
+
+
+// ===============================
+// Browser Notifications
+// ===============================
+
+if ("Notification" in window) {
+
+  Notification.requestPermission();
+
+}
+
+function showBrowserNotification(sender) {
+
+  if (Notification.permission === "granted") {
+
+    new Notification("CryptoMesh", {
+
+      body: `New encrypted message from ${sender}`,
+
+      icon: "/static/icon.png"
+
+    });
+
+  }
+
+}
 // ── inspector ──
 function toggleInspector() {
   inspectorOpen = !inspectorOpen;
@@ -236,12 +600,12 @@ function showInspector(steps, plaintext, dir, msg) {
     </div>
     <div class="insp-section">
       <div class="insp-label">Protocol</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
-        <span class="tag tag-dh">DH RFC 3526</span>
-        <span class="tag tag-kdf">SHA-256 KDF</span>
-        <span class="tag tag-enc">AES-256-GCM</span>
-        <span class="tag tag-sig">RSA-PSS</span>
-      </div>
+  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+    <span class="tag tag-dh">X25519</span>
+    <span class="tag tag-kdf">HKDF-SHA256</span>
+    <span class="tag tag-enc">AES-256-GCM</span>
+    <span class="tag tag-sig">Ed25519</span>
+   </div>
     </div>
     <div class="insp-section">
       <div class="insp-label">Operations (${(steps || []).length} steps)</div>

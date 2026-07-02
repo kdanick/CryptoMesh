@@ -667,3 +667,33 @@ body {
   background: var(--border2);
   border-radius: 4px;
 }
+/* ===============================
+   Unread Badge
+================================== */
+
+.unread-badge {
+
+    min-width: 22px;
+    height: 22px;
+
+    border-radius: 50%;
+
+    background: #ef4444;
+
+    color: white;
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+
+    font-size: 12px;
+
+    font-weight: bold;
+
+    margin-left: auto;
+
+    padding: 0 6px;
+
+}
