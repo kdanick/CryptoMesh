@@ -6,6 +6,7 @@ let activePeer = null;
 let allMessages = [];
 let inspectorOpen = true;
 
+// These will be the colors used for avatars.
 const colors = [
   "#3b82f6",
   "#22c55e",
@@ -15,6 +16,7 @@ const colors = [
   "#06b6d4",
   "#f97316",
 ];
+// Generate a color based on the name string. The same name will always get the same color.
 function avatarColor(name) {
   let h = 0;
   for (let c of name) h = (h * 31 + c.charCodeAt(0)) % colors.length;
@@ -110,7 +112,7 @@ function renderMessages() {
     (m) => m.sender === activePeer || m.recipient === activePeer,
   );
 
-const all = convo.sort((a, b) => a.timestamp - b.timestamp);
+  const all = convo.sort((a, b) => a.timestamp - b.timestamp);
 
   if (all.length === 0) {
     box.innerHTML =
@@ -167,7 +169,7 @@ async function doSend() {
     });
     const d = await r.json();
     if (!r.ok) return alert(d.error || "Send failed");
-    
+
     await fetchMessages();
     // show inspector for the sent message
     showInspector(d.steps, msg, "sent");
