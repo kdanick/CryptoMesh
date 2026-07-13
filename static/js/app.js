@@ -3,7 +3,7 @@ const API = "http://localhost:5000/api";
 let me = null;
 let myPass = null;
 let activePeer = null;
-let allMessages = [];
+let sessionMessages = []; // this session's message history — sessionStorage-backed
 let inspectorOpen = true;
 
 // ===== Notification System =====
@@ -13,7 +13,6 @@ let pollingStarted = false;
 
 // ===============================
 
-// These will be the colors used for avatars.
 const colors = [
   "#3b82f6",
   "#22c55e",
@@ -23,7 +22,6 @@ const colors = [
   "#06b6d4",
   "#f97316",
 ];
-// Generate a color based on the name string. The same name will always get the same color.
 function avatarColor(name) {
   let h = 0;
   for (let c of name) h = (h * 31 + c.charCodeAt(0)) % colors.length;
@@ -42,6 +40,23 @@ function timeStr() {
 }
 
 // ===============================
+// sessionMessages persistence helpers
+// ===============================
+
+function loadSessionMessages() {
+  try {
+    const raw = sessionStorage.getItem("cm_messages");
+    sessionMessages = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    sessionMessages = [];
+  }
+}
+
+function saveSessionMessages() {
+  sessionStorage.setItem("cm_messages", JSON.stringify(sessionMessages));
+}
+
+// ===============================
 // Session Check
 // ===============================
 
@@ -57,6 +72,8 @@ function timeStr() {
   me = u;
   myPass = p;
 
+  loadSessionMessages(); // restore history from this browser session (survives refresh)
+
   document.getElementById("user-badge").textContent = "● " + me;
 
   loadContacts();
@@ -64,7 +81,6 @@ function timeStr() {
 
   if (!pollingStarted) {
     pollingStarted = true;
-
     setInterval(pollMessages, 2000);
   }
 })();
@@ -76,6 +92,11 @@ function timeStr() {
 function doLogout() {
   sessionStorage.removeItem("cm_user");
   sessionStorage.removeItem("cm_pass");
+  sessionStorage.removeItem("cm_messages"); // wipe history — this is the "forget everything" point
+
+  sessionMessages = [];
+  knownMessages.clear();
+  unreadCounts = {};
 
   window.location.href = "/login";
 }
@@ -100,71 +121,55 @@ async function loadContacts() {
     const d = await r.json();
 
     const list = document.getElementById("user-list");
-
     list.innerHTML = "";
 
     d.users
       .filter((u) => u !== me)
       .forEach((u) => {
         const unread = unreadCounts[u] || 0;
-
         const item = document.createElement("div");
-
         item.className = "user-item" + (u === activePeer ? " active" : "");
-
         item.innerHTML = `
           <div class="avatar"
           style="background:${avatarColor(u)}22;color:${avatarColor(u)}">
-
             ${initials(u)}
-
           </div>
-
           <div style="flex:1">
-
             <div class="uname">${u}</div>
-
             <div class="ustatus">
               🔒 end-to-end encrypted
             </div>
-
           </div>
-
           ${unread > 0 ? `<div class="unread-badge">${unread}</div>` : ""}
         `;
-
         item.onclick = () => openChat(u);
-
         list.appendChild(item);
       });
   } catch (e) {
     console.log(e);
   }
 }
+
 // ===============================
 // Open Chat
 // ===============================
 
 async function openChat(peer) {
   activePeer = peer;
-
-  // Clear unread count for this contact
   unreadCounts[peer] = 0;
 
   document.getElementById("chat-title").textContent = peer;
-
   document.getElementById("compose-input").disabled = false;
   document.getElementById("btn-send").disabled = false;
-
   document.getElementById("compose-input").focus();
 
   loadContacts();
-
+  renderMessages();
   await fetchMessages();
 }
 
 // ===============================
-// Fetch Messages
+// Fetch Messages (server DELETES each file as it delivers it)
 // ===============================
 
 async function fetchMessages() {
@@ -173,32 +178,27 @@ async function fetchMessages() {
   try {
     const r = await fetch(`${API}/messages`, {
       method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        username: me,
-
-        password: myPass,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: me, password: myPass }),
     });
 
     const d = await r.json();
-
     if (!r.ok) return;
 
-    allMessages = d.messages || [];
+    let changed = false;
 
-    // Register messages so they aren't treated as "new"
-    knownMessages.clear();
-
-    allMessages.forEach((msg) => {
-      knownMessages.add(msg.filename);
+    (d.messages || []).forEach((msg) => {
+      if (!knownMessages.has(msg.filename)) {
+        knownMessages.add(msg.filename);
+        sessionMessages.push(msg);
+        changed = true;
+      }
     });
 
-    renderMessages();
+    if (changed) {
+      saveSessionMessages();
+      renderMessages();
+    }
   } catch (e) {
     console.log(e);
   }
@@ -211,7 +211,7 @@ async function fetchMessages() {
 function renderMessages() {
   const box = document.getElementById("messages");
 
-  const convo = allMessages.filter(
+  const convo = sessionMessages.filter(
     (m) => m.sender === activePeer || m.recipient === activePeer,
   );
 
@@ -226,7 +226,6 @@ function renderMessages() {
         <p>No messages yet — say something!</p>
       </div>
     `;
-
     return;
   }
 
@@ -234,11 +233,8 @@ function renderMessages() {
 
   all.forEach((msg, i) => {
     const sent = msg.sender === me;
-
     const row = document.createElement("div");
-
     row.className = "msg-row " + (sent ? "sent" : "received");
-
     const color = avatarColor(msg.sender);
 
     const sigBadge =
@@ -249,25 +245,16 @@ function renderMessages() {
           : "";
 
     row.innerHTML = `
-
       <div class="bubble-avatar"
       style="background:${color}22;color:${color}">
-
         ${initials(msg.sender)}
-
       </div>
-
       <div class="bubble-wrap">
-
         <div class="bubble"
              onclick="inspectMessage(${i},'${sent ? "sent" : "recv"}')">
-
           ${msg.plaintext || "<em style='color:var(--text3)'>encrypted</em>"}
-
         </div>
-
         <div class="bubble-meta">
-
         <span class="bubble-time">
           ${
             msg.timestamp
@@ -278,28 +265,19 @@ function renderMessages() {
               : "--:--"
           }
         </span>
-
           ${sigBadge}
-
           <span class="crypto-hint">
-
             AES-256-GCM
-
           </span>
-
         </div>
-
       </div>
-
     `;
 
     row.dataset.idx = i;
-
     box.appendChild(row);
   });
 
   box.scrollTop = box.scrollHeight;
-
   window._allRendered = all;
 }
 
@@ -312,7 +290,6 @@ async function doSend() {
 
   const ta = document.getElementById("compose-input");
   const msg = ta.value.trim();
-
   if (!msg) return;
 
   ta.value = "";
@@ -321,11 +298,7 @@ async function doSend() {
   try {
     const r = await fetch(`${API}/send`, {
       method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sender: me,
         password: myPass,
@@ -337,10 +310,20 @@ async function doSend() {
     const d = await r.json();
     if (!r.ok) return alert(d.error || "Send failed");
 
-    // Refresh messages from the backend
-    await fetchMessages();
+    // The server never stores or returns our own plaintext (forward
+    // secrecy) — so we record what we sent directly into session history.
+    sessionMessages.push({
+      filename: `local_${Date.now()}`,
+      sender: me,
+      recipient: activePeer,
+      timestamp: Date.now(),
+      plaintext: msg,
+      sig_valid: true,
+      steps: d.steps,
+    });
+    saveSessionMessages();
 
-    // Show Crypto Inspector
+    renderMessages();
     showInspector(d.steps, msg, "sent");
   } catch (e) {
     alert("Backend unreachable");
@@ -357,20 +340,11 @@ async function pollMessages() {
   try {
     const r = await fetch(`${API}/messages`, {
       method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        username: me,
-
-        password: myPass,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: me, password: myPass }),
     });
 
     const d = await r.json();
-
     if (!r.ok) return;
 
     let changed = false;
@@ -378,22 +352,19 @@ async function pollMessages() {
     (d.messages || []).forEach((msg) => {
       if (!knownMessages.has(msg.filename)) {
         knownMessages.add(msg.filename);
-
+        sessionMessages.push(msg);
         changed = true;
 
         if (msg.sender !== me && msg.sender !== activePeer) {
           unreadCounts[msg.sender] = (unreadCounts[msg.sender] || 0) + 1;
-
           showBrowserNotification(msg.sender);
         }
       }
     });
 
     if (changed) {
-      allMessages = d.messages;
-
+      saveSessionMessages();
       renderMessages();
-
       loadContacts();
     }
   } catch (e) {
@@ -413,11 +384,11 @@ function showBrowserNotification(sender) {
   if (Notification.permission === "granted") {
     new Notification("CryptoMesh", {
       body: `New encrypted message from ${sender}`,
-
       icon: "/static/icon.png",
     });
   }
 }
+
 // ── inspector ──
 function toggleInspector() {
   inspectorOpen = !inspectorOpen;
@@ -439,25 +410,21 @@ function inspectMessage(idx, dir) {
 
 const stepClasses = {
   Unlock: "auth",
-
   "Diffie-Hellman": "dh",
   "Station-to-Station": "dh",
-
   "Key Derivation": "kdf",
   "SHA-256": "kdf",
-
   AES: "enc",
   Encryption: "enc",
   Decryption: "enc",
   GCM: "enc",
-
   RSA: "sig",
   "RSA-PSS": "sig",
   Signature: "sig",
   Verify: "sig",
-
   Saved: "save",
   disk: "save",
+  discarded: "save",
 };
 
 function stepClass(name) {

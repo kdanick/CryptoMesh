@@ -158,14 +158,17 @@ def send_message(data):
     # =========================
     # Package Message
     # =========================
+    # NOTE: no plaintext stored anywhere. This wire package is only ever
+    # decryptable by the recipient's long-term DH private key, and it is
+    # deleted the moment that decryption succeeds (see decrypt.py). The
+    # sender's own copy of what they sent exists ONLY in that sender's
+    # browser session (sessionStorage) — it is never reconstructed from
+    # this file.
 
     pkg = {
 
     "sender": sender,
     "recipient": recipient,
-
-    # Sender's local copy
-    "sender_plaintext": message,
 
     "eph_pub": int_to_b64(eph_pub_int),
 
@@ -176,7 +179,7 @@ def send_message(data):
     "sts_signature": b64e(sts_signature),
 
     "msg_signature": b64e(msg_signature),
-    
+
     "timestamp": int(time.time() * 1000),
 
     "algorithm":
@@ -240,7 +243,13 @@ def send_message(data):
             },
 
             {
-                "step": "⑦ Saved to disk",
+                "step": "⑦ Ephemeral key discarded",
+                "detail":
+                    "eph_priv never persisted — this exact shared secret can never be recomputed again"
+            },
+
+            {
+                "step": "⑧ Saved to disk",
                 "detail":
                     f"File: {filename}"
             }

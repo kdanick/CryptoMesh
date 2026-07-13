@@ -7,9 +7,22 @@ Handles receiving and decrypting messages using:
 - Diffie-Hellman key exchange
 - SHA-256 key derivation
 - AES-256-GCM decryption
+
+Forward secrecy model:
+- Only the RECIPIENT can decrypt a message (shared secret requires the
+  recipient's long-term DH private key + the sender's ephemeral pub).
+- The sender's own copy of what they sent is NEVER reconstructed here —
+  it exists only in the sender's browser sessionStorage, set at send time.
+- Once a message is successfully decrypted and verified, its wire file
+  is deleted immediately (f.unlink()). After that point the ciphertext
+  no longer exists anywhere — it cannot be recovered even by an attacker
+  who later obtains the recipient's private key and password.
+- If decryption fails for a transient reason, the file is left in place
+  so a genuinely undelivered message isn't destroyed by accident.
 """
 
 import hashlib
+import threading
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.backends import default_backend
@@ -81,61 +94,26 @@ def get_messages(data):
     results = []
 
     # =========================
-    # Read Every Message
+    # Deliver Every Message Addressed To This User
     # =========================
 
     for f in MSGS_DIR.glob("*.json"):
 
         pkg = load_json(f)
 
-        if (
-            pkg.get("recipient") != username
-            and
-            pkg.get("sender") != username
-            ):
-                continue
+        # Only the recipient can ever decrypt this wire package.
+        if pkg.get("recipient") != username:
+            continue
 
         steps = []
         plaintext = None
         sig_valid = None
         error = None
+        delivered = False
 
         try:
 
             sender = pkg["sender"]
-            # =========================
-            # Messages sent by this user
-            # =========================
-
-            if sender == username:
-
-                plaintext = pkg.get("sender_plaintext")
-
-                steps.append({
-                    "step": "① Load Message History",
-                    "detail": "Loaded sender's saved copy of the message."
-                })
-
-                steps.append({
-                    "step": "② Original Encryption",
-                    "detail": "This message was originally encrypted using DH + STS + AES-256-GCM."
-                })
-
-                sig_valid = True
-
-                results.append({
-                    "filename": f.name,
-                    "timestamp": pkg.get("timestamp", 0),
-                    "sender": sender,
-                    "recipient": pkg.get("recipient"),
-                    "algorithm": pkg.get("algorithm"),
-                    "plaintext": plaintext,
-                    "sig_valid": sig_valid,
-                    "error": None,
-                    "steps": steps
-                })
-
-                continue
 
             eph_pub_int = b64_to_int(
                 pkg["eph_pub"]
@@ -338,6 +316,8 @@ def get_messages(data):
 
             })
 
+            delivered = True
+
         except Exception as e:
 
             error = str(e)
@@ -363,6 +343,22 @@ def get_messages(data):
             "error": error,
             "steps": steps
             })
+
+        # =========================
+        # Forward Secrecy: destroy on successful delivery
+        # =========================
+        # Only delete once fully decrypted+verified. A transient failure
+        # (e.g. bad password check earlier would've returned 401 already;
+        # this covers anything else) leaves the file in place rather than
+        # destroying the only copy of an undelivered message.
+        if delivered:
+            def delayed_delete(path):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
+            threading.Timer(10.0, delayed_delete, args=[f]).start()
 
     # Sort messages chronologically (oldest → newest)
     results.sort(key=lambda m: m.get("timestamp", 0))
